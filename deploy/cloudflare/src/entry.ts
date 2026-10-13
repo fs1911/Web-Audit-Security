@@ -1,69 +1,84 @@
 /**
  * Cloudflare-Worker-Einstieg für «web-audit-security».
- * STATUS: Entwurf, nicht deployt und nicht gegen Cloudflare getestet (siehe docs/deployment.md).
  *
- * - fetch:      Next.js-App über den OpenNext-Adapter (Build: `npx opennextjs-cloudflare build`)
- * - scheduled:  Dispatcher (Postgres-Queue → Container), Beenden hängender Scans
- * - Container:  ScanRunnerContainer führt src/runner/server.ts mit ZAP aus
+ * - fetch:      Next.js-App über den OpenNext-Adapter (`npm run cf:build` erzeugt .open-next/worker.js)
+ * - scheduled:  Dispatcher jede Minute: Postgres-Queue → Scan-Container; hängende Scans beenden
+ * - Container:  ScanRunnerContainer führt src/runner/server.ts mit OWASP ZAP aus (Image: deploy/docker/Dockerfile.runner)
  *
- * Egress-Entscheid (dokumentierter Zielkonflikt):
- * Cloudflare filtert HTTPS-Ziele netzwerkseitig nur mit TLS-Interception (interceptHttps).
- * Interception würde die TLS-/Zertifikatsprüfungen verfälschen. Standard ist daher
- * EGRESS_MODE="app": Internetzugang an, Schutz durch Netguard + Egress-Proxy im Runner
- * (DNS-/IP-Prüfung pro Verbindung). EGRESS_MODE="intercept" schaltet die netzwerkseitige
- * Host-Allowlist ein; TLS-Prüfpunkte werden dann im Bericht als «nicht geprüft» geführt
- * (noch nicht implementiert → derzeit nicht verwenden).
+ * Egress-Entscheid (siehe docs/deployment.md): enableInternet=true, Schutz anwendungsseitig
+ * (Netguard + Egress-Proxy im Runner). TLS-Interception würde die Zertifikatsprüfungen verfälschen.
  */
-// @ts-nocheck – Typen kommen erst mit @cloudflare/workers-types / OpenNext-Build
 import { Container, getContainer } from "@cloudflare/containers";
-// Wird von `opennextjs-cloudflare build` erzeugt
+import { eq } from "drizzle-orm";
+// @ts-expect-error – wird erst durch `opennextjs-cloudflare build` erzeugt
 import openNext from "../../../.open-next/worker.js";
+import { withDbConnection, getDb } from "../../../src/lib/db";
+import { scanJobs, scans } from "../../../src/lib/db/schema";
+import { buildJobSpec, claimNextJob, failStaleScans } from "../../../src/lib/scans/service";
 
-export class ScanRunnerContainer extends Container {
+type Env = {
+  HYPERDRIVE: { connectionString: string };
+  SCAN_RUNNER: DurableObjectNamespace<ScanRunnerContainer>;
+  RUNNER_SHARED_SECRET: string;
+  [k: string]: unknown;
+};
+
+export class ScanRunnerContainer extends Container<Env> {
   defaultPort = 8787;
-  sleepAfter = "30m";
-  enableInternet = true; // siehe Egress-Entscheid oben
-  envVars = {
-    RUNNER_HOST: "0.0.0.0",
-    RUNNER_PORT: "8787",
-    WEBAUDIT_ENV: "production",
-    NODE_ENV: "production",
-  };
-}
-
-async function dispatch(env: Env) {
-  // Nutzt denselben Code wie der lokale Dispatcher (src/worker/main.ts), aber mit Container-Ziel.
-  process.env.DATABASE_URL = env.HYPERDRIVE.connectionString;
-  const { getDb } = await import("../../../src/lib/db");
-  const { claimNextJob, buildJobSpec, failStaleScans } = await import("../../../src/lib/scans/service");
-  const { scans, scanJobs } = await import("../../../src/lib/db/schema");
-  const { eq } = await import("drizzle-orm");
-  const db = getDb();
-  await failStaleScans(db);
-  for (let i = 0; i < 5; i++) {
-    const claimed = await claimNextJob(db);
-    if (!claimed) return;
-    const [scan] = await db.select().from(scans).where(eq(scans.id, claimed.scanId));
-    const spec = await buildJobSpec(db, claimed.jobId, scan);
-    const runner = getContainer(env.SCAN_RUNNER, claimed.jobId);
-    const res = await runner.fetch("http://runner/jobs", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${env.RUNNER_SHARED_SECRET}` },
-      body: JSON.stringify(spec),
+  sleepAfter = "15m";
+  enableInternet = true;
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env, {
+      envVars: {
+        RUNNER_HOST: "0.0.0.0",
+        RUNNER_PORT: "8787",
+        RUNNER_MAX_CONCURRENT: "1",
+        RUNNER_SHARED_SECRET: env.RUNNER_SHARED_SECRET,
+        NODE_ENV: "production",
+        WEBAUDIT_ENV: "production",
+      },
     });
-    if (res.status === 202) {
-      await db.update(scanJobs).set({ runnerRef: `container:${claimed.jobId}` }).where(eq(scanJobs.id, claimed.jobId));
-      await db.update(scans).set({ status: "running", startedAt: new Date(), lastHeartbeatAt: new Date(), phase: "An Scan-Container übergeben" }).where(eq(scans.id, scan.id));
-    } else {
-      await db.update(scans).set({ status: "failed", phase: "Fehlgeschlagen", error: `Scan-Container lehnte Job ab (HTTP ${res.status}). Keine Ergebnisse erzeugt.`, finishedAt: new Date() }).where(eq(scans.id, scan.id));
-      await db.update(scanJobs).set({ state: "done" }).where(eq(scanJobs.id, claimed.jobId));
-    }
   }
 }
 
+async function dispatch(env: Env): Promise<void> {
+  await withDbConnection(env.HYPERDRIVE.connectionString, async () => {
+    const db = getDb();
+    const stale = await failStaleScans(db);
+    if (stale) console.log(`[dispatcher] ${stale} Scan(s) ohne Rückmeldung beendet`);
+    for (let i = 0; i < 5; i++) {
+      const claimed = await claimNextJob(db);
+      if (!claimed) return;
+      const [scan] = await db.select().from(scans).where(eq(scans.id, claimed.scanId));
+      if (!scan) continue;
+      try {
+        const spec = await buildJobSpec(db, claimed.jobId, scan);
+        // Ein Container pro Job (Name = Job-ID) → Isolation zwischen Scans
+        const runner = getContainer(env.SCAN_RUNNER, claimed.jobId);
+        await runner.startAndWaitForPorts();
+        const res = await runner.fetch(
+          new Request("http://runner/jobs", {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${env.RUNNER_SHARED_SECRET}` },
+            body: JSON.stringify(spec),
+          }),
+        );
+        if (res.status !== 202) throw new Error(`Scan-Container lehnte Job ab (HTTP ${res.status})`);
+        await db.update(scanJobs).set({ runnerRef: `container:${claimed.jobId}` }).where(eq(scanJobs.id, claimed.jobId));
+        await db.update(scans).set({ status: "running", startedAt: new Date(), lastHeartbeatAt: new Date(), phase: "An Scan-Container übergeben" }).where(eq(scans.id, scan.id));
+        console.log(`[dispatcher] Scan ${scan.id} an Container übergeben`);
+      } catch (e) {
+        await db.update(scans).set({ status: "failed", phase: "Fehlgeschlagen", error: `Scan-Container nicht verfügbar: ${(e as Error).message}. Es wurden keine Ergebnisse erzeugt.`, finishedAt: new Date() }).where(eq(scans.id, scan.id));
+        await db.update(scanJobs).set({ state: "done" }).where(eq(scanJobs.id, claimed.jobId));
+        console.error(`[dispatcher] Scan ${scan.id} fehlgeschlagen: ${(e as Error).message}`);
+      }
+    }
+  });
+}
+
 export default {
-  fetch: openNext.fetch,
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+  fetch: (openNext as { fetch: ExportedHandlerFetchHandler<Env> }).fetch,
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(dispatch(env));
   },
-};
+} satisfies ExportedHandler<Env>;

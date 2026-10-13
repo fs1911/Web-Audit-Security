@@ -1,5 +1,5 @@
 # Scan-Runner-Image: OWASP ZAP (offizielles Image, Version fixiert) + Node.js + Repo-Scanner.
-# Wird in Cloudflare Containers bzw. docker compose verwendet. Nicht in dieser Session gebaut (kein Docker-Daemon).
+# Wird in Cloudflare Containers bzw. docker compose verwendet. Gebaut im GitHub-Actions-Workflow cf-deploy.yml.
 FROM zaproxy/zap-stable:2.17.0
 USER root
 ARG NODE_MAJOR=22
@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && pip3 install --break-system-packages --no-cache-dir semgrep==1.180.0 \
  && rm -rf /var/lib/apt/lists/*
 # gitleaks / osv-scanner als fixierte Release-Binaries
-ARG GITLEAKS_VERSION=8.28.0
+ARG GITLEAKS_VERSION=8.30.1
 ARG OSV_VERSION=2.7.0
 RUN curl -fsSL -o /tmp/gl.tgz https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz \
  && tar -xzf /tmp/gl.tgz -C /usr/local/bin gitleaks && rm /tmp/gl.tgz \

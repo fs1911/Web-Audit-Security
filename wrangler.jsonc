@@ -1,0 +1,49 @@
+// Cloudflare-Konfiguration für den bestehenden Worker «web-audit-security».
+// Deployment ausschliesslich über GitHub Actions (.github/workflows/cf-deploy.yml), weil das
+// Runner-Image mit Docker gebaut werden muss. Anleitung: docs/einrichtung-cloudflare.md
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "web-audit-security",
+  "main": "deploy/cloudflare/src/entry.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "observability": { "enabled": true },
+
+  // Eigene Supabase-Datenbank über Hyperdrive. NICHT «baustellenkontrolle-db» verwenden.
+  // Die ID wird beim Deployment aus dem GitHub-Secret HYPERDRIVE_ID eingesetzt.
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "HYPERDRIVE_ID_PLATZHALTER" }],
+
+  // Private Berichtsablage (R2-Binding, keine Zugangsschlüssel nötig)
+  "r2_buckets": [{ "binding": "REPORTS", "bucket_name": "web-audit-security-reports" }],
+
+  // Scan-Runner als Container (benötigt Workers Paid)
+  "containers": [
+    {
+      "class_name": "ScanRunnerContainer",
+      "image": "./deploy/docker/Dockerfile.runner",
+      "image_build_context": ".",
+      "instance_type": "standard-1",
+      "max_instances": 2
+    }
+  ],
+  "durable_objects": { "bindings": [{ "name": "SCAN_RUNNER", "class_name": "ScanRunnerContainer" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ScanRunnerContainer"] }],
+
+  // Dispatcher jede Minute
+  "triggers": { "crons": ["* * * * *"] },
+
+  "vars": {
+    "WEBAUDIT_RUNTIME": "cloudflare",
+    "WEBAUDIT_ENV": "production",
+    "NODE_ENV": "production",
+    "STORAGE_DRIVER": "r2",
+    "ENABLE_ACTIVE_SCANS": "false",
+    "ALLOW_REGISTRATION": "false",
+    "MAX_CONCURRENT_SCANS_PER_ORG": "2"
+  }
+  // Secrets (setzt der Workflow «Cloudflare: Secrets initialisieren»):
+  //   APP_ENCRYPTION_KEY, RUNNER_CALLBACK_SECRET, RUNNER_SHARED_SECRET
+  // APP_URL / APP_INTERNAL_URL setzt der Deploy-Workflow aus der workers.dev-Subdomain.
+  // Optional: ANTHROPIC_API_KEY (wrangler secret put)
+}

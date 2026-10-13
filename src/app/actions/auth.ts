@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
-import { authenticate, createSession, deleteSession, registerUser, SESSION_COOKIE } from "@/lib/auth/session";
+import { authenticate, createSession, deleteSession, registerUser, registrationAllowed, SESSION_COOKIE } from "@/lib/auth/session";
 import { clientIp } from "@/lib/auth/current";
 import { audit } from "@/lib/audit";
 
@@ -13,8 +13,8 @@ async function setSessionCookie(token: string, expiresAt: Date) {
 }
 
 export async function registerAction(formData: FormData) {
-  if (process.env.ALLOW_REGISTRATION === "false") redirect("/register?error=" + encodeURIComponent("Die Registrierung ist auf dieser Installation deaktiviert."));
   const db = getDb();
+  if (!(await registrationAllowed(db))) redirect("/register?error=" + encodeURIComponent("Die Registrierung ist auf dieser Installation geschlossen."));
   let target = "/";
   try {
     const { user } = await registerUser(db, {

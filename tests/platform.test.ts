@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { closeDb, type DB } from "../src/lib/db";
 import { auditLog, coverageResults, findings, scanApprovals, scanJobs, scans, siteHosts, sites } from "../src/lib/db/schema";
-import { registerUser, authenticate, createSession, validateSessionToken } from "../src/lib/auth/session";
+import { registerUser, registrationAllowed, authenticate, createSession, validateSessionToken } from "../src/lib/auth/session";
 import { AccessDeniedError, requireReport, requireScan, requireSite } from "../src/lib/auth/rbac";
 import { buildJobSpec, claimNextJob, handleRunnerEvent, requestCancel, startScan, ScanRejectedError } from "../src/lib/scans/service";
 import { createReport } from "../src/lib/reports/service";
@@ -73,6 +73,13 @@ describe("Authentifizierung", () => {
     expect(await validateSessionToken(db, s.token + "x")).toBeNull();
     for (let i = 0; i < 5; i++) await expect(authenticate(db, "a@example.ch", "falsch-falsch-falsch", null)).rejects.toThrow(/falsch/);
     await expect(authenticate(db, "a@example.ch", "korrekt-pferd-batterie", null)).rejects.toThrow(/Zu viele/);
+  });
+  it("Registrierung bei ALLOW_REGISTRATION=false nur für das erste Konto (Bootstrap)", async () => {
+    const closed = { ALLOW_REGISTRATION: "false" } as unknown as NodeJS.ProcessEnv;
+    expect(await registrationAllowed(db, closed)).toBe(false); // setup() hat bereits Konten angelegt
+    await resetDb();
+    expect(await registrationAllowed(db, closed)).toBe(true);
+    expect(await registrationAllowed(db, {} as NodeJS.ProcessEnv)).toBe(true);
   });
   it("lehnt schwache Passwörter ab", async () => {
     await expect(registerUser(db, { email: "c@example.ch", name: "C", password: "kurz", orgName: "C" })).rejects.toThrow(/12 Zeichen/);

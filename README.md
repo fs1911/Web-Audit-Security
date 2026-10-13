@@ -1,6 +1,6 @@
 # WebAudit Security
 
-Browserbasierte Plattform zur **technischen Sicherheitsprüfung eigener Websites** im ausdrücklich freigegebenen Umfang. Deutsche Oberfläche (Schweizer Schreibweise).
+Browserbasierte Plattform zur **technischen Sicherheitsprüfung eigener Websites** im ausdrücklich freigegebenen Umfang. Deutsche Oberfläche (Schweizer Schreibweise). Technik: Next.js 15, PostgreSQL, OWASP ZAP 2.17, Cloudflare Workers + Containers.
 
 > Automatisierte technische Sicherheitsprüfung im angegebenen Umfang. Kein vollständiger Penetrationstest, keine ISO-Zertifizierung und kein Nachweis der vollständigen rechtlichen oder datenschutzrechtlichen Konformität.
 
@@ -64,7 +64,8 @@ npm run typecheck
 | [docs/threat-model.md](docs/threat-model.md) | Bedrohungsmodell (STRIDE) mit Umsetzungsstatus |
 | [docs/catalog.md](docs/catalog.md) | Prüfkatalog, Referenzwerke, Lizenzen |
 | [docs/coverage-matrix.md](docs/coverage-matrix.md) | Coverage-Matrix (generiert) |
-| [docs/deployment.md](docs/deployment.md) | Cloudflare (Worker `web-audit-security`), Kosten, VPS-Alternative |
+| [docs/einrichtung-cloudflare.md](docs/einrichtung-cloudflare.md) | **Schritt-für-Schritt-Einrichtung auf Cloudflare + Supabase (nur Browser)** |
+| [docs/deployment.md](docs/deployment.md) | Cloudflare-Architektur, Kosten, VPS-Alternative |
 | [docs/limitations.md](docs/limitations.md) | Tatsächliche Funktionsgrenzen |
 | [docs/test-report.md](docs/test-report.md) | Zuletzt ausgeführte Tests und Ergebnisse |
 

@@ -42,7 +42,8 @@ Diese Liste ist verbindlich. Was hier steht, kann die Plattform **nicht** oder *
 
 - API-Spezifikation wird gespeichert, aber **kein API-Scan** auf Basis von OpenAPI ausgeführt.
 - Netzwerkseitiger Egress-Schutz (Firewall) ist **nicht** Teil des Codes und muss beim Hosting eingerichtet werden; auf Cloudflare Containers wird er aus TLS-Gründen nicht genutzt (siehe deployment.md).
-- Cloudflare-Deployment: geschrieben, **nicht** deployt und **nicht** getestet.
+- Cloudflare-Deployment: Worker lokal in workerd getestet; Container-Betrieb und echtes Deployment **nicht** getestet. Next.js ist auf 15.x fixiert, weil OpenNext 1.20 mit Next 16.4 nicht funktioniert (geprüft: «Unexpected loadManifest(preview-props.json)»). TypeScript auf 5.9 fixiert (Next 15 ist mit TypeScript 7 inkompatibel).
+- Scan-Abbruch auf Cloudflare wirkt über die Callback-Antwort an den Runner (Herzschlag alle 5 s), nicht über einen direkten Aufruf.
 - Mehrere Organisationen pro Konto: Datenmodell unterstützt es; die UI bietet derzeit keine Einladungs- und Wechselfunktion (Mitglieder werden über die Datenbank verwaltet).
 - E-Mail-Benachrichtigungen, Passwort-Zurücksetzen und MFA für Plattformkonten: nicht implementiert.
 - Aufbewahrung/Löschung: Skript vorhanden (`npm run retention`), muss per Cron eingeplant werden.

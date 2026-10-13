@@ -32,6 +32,16 @@ export async function deleteSession(db: DB, token: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.id, sha256(token)));
 }
 
+/**
+ * Registrierung: offen, wenn ALLOW_REGISTRATION nicht "false" ist, sonst nur für das allererste
+ * Konto (Bootstrap einer neuen Installation). Danach bleibt sie geschlossen.
+ */
+export async function registrationAllowed(db: DB, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  if (env.ALLOW_REGISTRATION !== "false") return true;
+  const [{ value } = { value: 0 }] = await db.select({ value: count() }).from(users);
+  return value === 0;
+}
+
 export async function registerUser(db: DB, input: { email: string; name: string; password: string; orgName: string }) {
   const email = input.email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Bitte eine gültige E-Mail-Adresse angeben.");

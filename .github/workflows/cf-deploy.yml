@@ -1,0 +1,69 @@
+# Baut die App (OpenNext) und das Scan-Runner-Image (Docker) und deployt den Worker
+# «web-audit-security». Läuft NUR bei manuellem Start (Actions → Run workflow).
+name: "Cloudflare: Deploy"
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency: { group: cf-deploy, cancel-in-progress: false }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: webaudit, POSTGRES_PASSWORD: webaudit, POSTGRES_DB: webaudit_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U webaudit" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run db:migrate
+        env: { DATABASE_URL: "postgres://webaudit:webaudit@localhost:5432/webaudit_test" }
+      - run: npm test
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      HYPERDRIVE_ID: ${{ secrets.HYPERDRIVE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Voraussetzungen prüfen
+        run: |
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID HYPERDRIVE_ID; do
+            test -n "${!v}" || { echo "::error::GitHub-Secret $v fehlt (siehe docs/einrichtung-cloudflare.md)"; exit 1; }
+          done
+          [[ "$HYPERDRIVE_ID" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::HYPERDRIVE_ID hat nicht das erwartete Format (32 Hex-Zeichen)"; exit 1; }
+          docker info > /dev/null
+      - name: Hyperdrive-ID einsetzen
+        run: sed -i "s/HYPERDRIVE_ID_PLATZHALTER/${HYPERDRIVE_ID}/" wrangler.jsonc
+      - name: workers.dev-Adresse ermitteln
+        id: url
+        run: |
+          sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain')
+          test -n "$sub" && test "$sub" != "null" || { echo "::error::workers.dev-Subdomain nicht gefunden"; exit 1; }
+          echo "app_url=https://web-audit-security.${sub}.workers.dev" >> "$GITHUB_OUTPUT"
+      - name: R2-Bucket sicherstellen
+        run: npx wrangler r2 bucket create web-audit-security-reports || echo "Bucket existiert bereits oder konnte nicht angelegt werden – siehe Log."
+      - name: App bauen (OpenNext)
+        run: npm run cf:build
+      - name: Deploy (inkl. Build des Scan-Runner-Images)
+        run: npx wrangler deploy --var "APP_URL:${{ steps.url.outputs.app_url }}" --var "APP_INTERNAL_URL:${{ steps.url.outputs.app_url }}"
+      - name: Erreichbarkeit prüfen
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${{ steps.url.outputs.app_url }}/login" || true)
+            [ "$code" = "200" ] && { echo "App erreichbar: ${{ steps.url.outputs.app_url }}"; exit 0; }
+            sleep 6
+          done
+          echo "::error::App antwortet nicht mit 200 (letzter Status: $code)"; exit 1

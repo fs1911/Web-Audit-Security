@@ -1,11 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 /**
  * Privater Objektspeicher für Berichte. Kein öffentlicher Zugriff: Downloads laufen
  * ausschliesslich über die App mit Berechtigungsprüfung.
  * - "fs": lokales Verzeichnis (Entwicklung)
  * - "s3": S3-kompatibel (Cloudflare R2), signiert mit SigV4 über aws4fetch
+ * - "r2": R2-Binding im Cloudflare Worker (keine Zugangsschlüssel nötig)
  */
 export interface ObjectStore {
   put(key: string, data: Uint8Array, contentType: string): Promise<void>;
@@ -66,8 +68,34 @@ class S3Store implements ObjectStore {
   }
 }
 
+type R2BucketLike = {
+  put(key: string, value: Uint8Array, opts?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
+  delete(key: string): Promise<void>;
+};
+
+class R2BindingStore implements ObjectStore {
+  private bucket(): R2BucketLike {
+    const env = getCloudflareContext().env as unknown as { REPORTS?: R2BucketLike };
+    if (!env.REPORTS) throw new Error("R2-Binding REPORTS fehlt (wrangler.jsonc).");
+    return env.REPORTS;
+  }
+  async put(key: string, data: Uint8Array, contentType: string) {
+    await this.bucket().put(safeKey(key), data, { httpMetadata: { contentType } });
+  }
+  async get(key: string) {
+    const o = await this.bucket().get(safeKey(key));
+    if (!o) throw new Error("Objektspeicher: Objekt nicht gefunden");
+    return new Uint8Array(await o.arrayBuffer());
+  }
+  async delete(key: string) {
+    await this.bucket().delete(safeKey(key));
+  }
+}
+
 export function getStore(): ObjectStore {
   const driver = process.env.STORAGE_DRIVER ?? "fs";
+  if (driver === "r2") return new R2BindingStore();
   if (driver === "s3") {
     const { S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY } = process.env;
     if (!S3_ENDPOINT || !S3_BUCKET || !S3_ACCESS_KEY_ID || !S3_SECRET_ACCESS_KEY) {

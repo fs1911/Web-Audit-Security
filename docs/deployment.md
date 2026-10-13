@@ -1,6 +1,8 @@
 # Deployment
 
-> **Status:** Lokal vollständig getestet (Web, Dispatcher, Runner, ZAP, Postgres). Die Cloudflare-Konfiguration ist **geschrieben, aber nicht deployt und nicht gegen ein Konto getestet**. Es wurde nichts in Betrieb gesetzt.
+> **Status:** Lokal vollständig getestet (Web, Dispatcher, Runner, ZAP, Postgres). Der Cloudflare-Worker wurde lokal in der echten Worker-Laufzeit (`wrangler dev`, workerd) mit Hyperdrive-Simulation und R2 getestet: Login, Dashboard, Ergebnisse, PDF in R2, Cron-Dispatcher. **Nicht getestet:** Container-Betrieb auf Cloudflare (lokal kein Docker) und ein echtes Deployment.
+>
+> **Einrichtung Schritt für Schritt:** [einrichtung-cloudflare.md](einrichtung-cloudflare.md). Deployment über GitHub Actions (`.github/workflows/cf-deploy.yml`), weil das Runner-Image Docker braucht.
 
 ## Ist-Zustand des Cloudflare-Kontos (lesend geprüft am 13.10.2026)
 
@@ -16,10 +18,10 @@
 | Komponente | Cloudflare-Dienst | Hinweis |
 |---|---|---|
 | Web-App | Worker `web-audit-security` mit OpenNext-Adapter (`@opennextjs/cloudflare`) | `nodejs_compat` |
-| Datenbank | externes PostgreSQL (eigenes Supabase- oder Neon-Projekt) via Hyperdrive | Cloudflare bietet kein verwaltetes Postgres; D1 (SQLite) ist mit dem Schema nicht kompatibel |
+| Datenbank | eigenes Supabase-Projekt via Hyperdrive (Client pro Request, `src/lib/db/index.ts`) | Cloudflare bietet kein verwaltetes Postgres; D1 (SQLite) ist mit dem Schema nicht kompatibel |
 | Queue/Dispatcher | Postgres-Queue + Cron-Trigger (jede Minute) im selben Worker | keine Cloudflare Queues nötig |
 | Scan-Runner | Cloudflare Containers (`ScanRunnerContainer`, Instanztyp `standard-1`) | Image `deploy/docker/Dockerfile.runner` (ZAP + Node + Repo-Scanner) |
-| Berichte | R2-Bucket `web-audit-security-reports` (privat) über S3-API | Zugriff nur über App |
+| Berichte | R2-Bucket `web-audit-security-reports` (privat) über R2-Binding `REPORTS` | Zugriff nur über App, keine Zugangsschlüssel |
 
 ### Laufzeitlimits (Cloudflare-Doku, Stand 12.10.2026)
 
