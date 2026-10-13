@@ -1,0 +1,65 @@
+{
+  "catalogVersion": "2026.10.0",
+  "references": [
+    {
+      "id": "ASVS",
+      "name": "OWASP Application Security Verification Standard",
+      "version": "5.0.0",
+      "source": "https://github.com/OWASP/ASVS/tree/v5.0.0/5.0/en",
+      "adoptedAt": "2026-10-13",
+      "license": "CC BY-SA 4.0 (Creative Commons Attribution-ShareAlike 4.0)",
+      "usage": "Nur Kontrollnummern und eigene Kurzbeschreibungen; keine Übernahme der Anforderungstexte. Kontrollnummern geprüft gegen Kapitel V3 (Web Frontend Security), V12 (Secure Communication), V13 (Configuration) des Tags v5.0.0.",
+      "role": "Technische Anforderungsbasis"
+    },
+    {
+      "id": "WSTG",
+      "name": "OWASP Web Security Testing Guide",
+      "version": "4.2",
+      "source": "https://github.com/OWASP/wstg/tree/v4.2/document/4-Web_Application_Security_Testing",
+      "adoptedAt": "2026-10-13",
+      "license": "CC BY-SA 4.0",
+      "usage": "Test-IDs im Format WSTG-<KAT>-<NN> gemäss Abschnittsnummern der Version 4.2. Version 5.0 ist in Entwicklung und wird nicht verwendet.",
+      "role": "Methodische Testgrundlage"
+    },
+    {
+      "id": "OWASP-TOP10",
+      "name": "OWASP Top 10",
+      "version": "2025",
+      "source": "https://owasp.org/Top10/2025/",
+      "adoptedAt": "2026-10-13",
+      "license": "CC BY-SA 4.0",
+      "usage": "Ergänzende Risikokategorisierung, kein Prüfkatalog.",
+      "role": "Risikokategorisierung"
+    },
+    {
+      "id": "CWE",
+      "name": "Common Weakness Enumeration",
+      "version": "4.20",
+      "source": "https://cwe.mitre.org/",
+      "adoptedAt": "2026-10-13",
+      "license": "CWE Terms of Use (MITRE, frei nutzbar mit Quellenangabe)",
+      "usage": "CWE-IDs für ZAP-Feststellungen stammen aus der ZAP-Ausgabe; für eigene Checks manuell zugeordnet.",
+      "role": "Schwachstellenklassifikation"
+    },
+    {
+      "id": "CVSS",
+      "name": "Common Vulnerability Scoring System",
+      "version": "4.0",
+      "source": "https://www.first.org/cvss/v4.0/specification-document",
+      "adoptedAt": "2026-10-13",
+      "license": "FIRST CVSS Terms of Use",
+      "usage": "Wird nur gesetzt, wenn Vektor und Begründung belastbar vorliegen. Die Plattform berechnet keine CVSS-Werte automatisch.",
+      "role": "Bewertung (optional)"
+    },
+    {
+      "id": "ISO27002",
+      "name": "ISO/IEC 27002:2022 (Zuordnung)",
+      "version": "2022",
+      "source": "https://www.iso.org/standard/75652.html",
+      "adoptedAt": "2026-10-13",
+      "license": "Urheberrechtlich geschützt (ISO). Keine Normtexte übernommen.",
+      "usage": "Nur Control-Nummern als ergänzende Zuordnung. Alle Zuordnungen sind als UNVERIFIZIERT markiert, weil der Normtext nicht als zulässige Quelle vorlag.",
+      "role": "Ergänzende Zuordnung (unverifiziert)"
+    }
+  ]
+}

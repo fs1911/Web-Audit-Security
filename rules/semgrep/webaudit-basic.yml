@@ -1,0 +1,79 @@
+# WebAudit Security – eigener, kleiner Semgrep-Regelsatz (MIT, Teil dieses Repositorys).
+# Bewusst klein gehalten: Treffer sind Verdachtsfälle und müssen verifiziert werden.
+# Grössere Regelsätze (z. B. Semgrep Registry) unterliegen eigenen Lizenzbedingungen,
+# siehe docs/catalog.md.
+rules:
+  - id: webaudit-js-eval
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "eval()/new Function() mit nicht konstantem Argument – mögliche Code-Injection."
+    metadata: { cwe: ["CWE-95"] }
+    pattern-either:
+      - patterns:
+          - pattern: eval($X)
+          - pattern-not: eval("...")
+      - patterns:
+          - pattern: new Function(...,$X)
+          - pattern-not: new Function("...")
+  - id: webaudit-js-child-process-shell
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "child_process.exec/execSync mit zusammengesetztem Befehl – mögliche Command Injection."
+    metadata: { cwe: ["CWE-78"] }
+    pattern-either:
+      - pattern: require("child_process").exec(`...${$X}...`, ...)
+      - pattern: $CP.exec(`...${$X}...`, ...)
+      - pattern: $CP.execSync(`...${$X}...`, ...)
+      - pattern: $CP.exec("..." + $X, ...)
+      - pattern: $CP.execSync("..." + $X, ...)
+  - id: webaudit-js-innerhtml
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "Zuweisung an innerHTML/outerHTML mit nicht konstantem Wert – mögliches DOM-XSS."
+    metadata: { cwe: ["CWE-79"] }
+    patterns:
+      - pattern-either:
+          - pattern: $E.innerHTML = $X
+          - pattern: $E.outerHTML = $X
+      - pattern-not: $E.innerHTML = "..."
+      - pattern-not: $E.outerHTML = "..."
+  - id: webaudit-react-dangerously-set-inner-html
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "dangerouslySetInnerHTML – Inhalt muss nachweislich bereinigt sein."
+    metadata: { cwe: ["CWE-79"] }
+    pattern: "<$T dangerouslySetInnerHTML={...} />"
+  - id: webaudit-js-sql-concat
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "SQL-Abfrage per String-Verkettung/Template – mögliche SQL-Injection. Parametrisierte Abfragen verwenden."
+    metadata: { cwe: ["CWE-89"] }
+    pattern-either:
+      - pattern: $DB.query(`...${$X}...`, ...)
+      - pattern: $DB.query("..." + $X, ...)
+  - id: webaudit-tls-reject-unauthorized-false
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "TLS-Zertifikatsprüfung deaktiviert (rejectUnauthorized: false)."
+    metadata: { cwe: ["CWE-295"] }
+    pattern: "{..., rejectUnauthorized: false, ...}"
+  - id: webaudit-py-subprocess-shell
+    languages: [python]
+    severity: ERROR
+    message: "subprocess mit shell=True – mögliche Command Injection."
+    metadata: { cwe: ["CWE-78"] }
+    pattern: subprocess.$F(..., shell=True, ...)
+  - id: webaudit-py-requests-verify-false
+    languages: [python]
+    severity: WARNING
+    message: "requests mit verify=False – TLS-Zertifikatsprüfung deaktiviert."
+    metadata: { cwe: ["CWE-295"] }
+    pattern: requests.$F(..., verify=False, ...)
+  - id: webaudit-py-yaml-load
+    languages: [python]
+    severity: WARNING
+    message: "yaml.load ohne SafeLoader – unsichere Deserialisierung."
+    metadata: { cwe: ["CWE-502"] }
+    patterns:
+      - pattern: yaml.load(...)
+      - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
