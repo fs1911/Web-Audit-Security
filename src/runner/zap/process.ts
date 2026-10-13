@@ -12,6 +12,18 @@ import net from "node:net";
  */
 export type ZapInstance = { baseUrl: string; apiKey: string; proc: ChildProcess; home: string; version?: string; stop: () => Promise<void> };
 
+/** Alle laufenden ZAP-Prozessgruppen; werden beim Beenden des Runners zwingend gestoppt. */
+const liveZapGroups = new Set<number>();
+process.on("exit", () => {
+  for (const pid of liveZapGroups) {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      /* bereits beendet */
+    }
+  }
+});
+
 export function zapInstallDir(): string | null {
   const dir = process.env.ZAP_HOME_DIR ?? "/opt/zap";
   try {
@@ -70,6 +82,8 @@ export async function startZap(opts: { memoryMb?: number; startTimeoutMs?: numbe
     "database.recoverylog=false",
   ];
   const proc = spawn("java", args, { cwd: avail.dir, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  if (proc.pid) liveZapGroups.add(proc.pid);
+  proc.on("exit", () => proc.pid && liveZapGroups.delete(proc.pid));
   let output = "";
   const collect = (d: Buffer) => {
     output = (output + d.toString()).slice(-8000);
@@ -91,6 +105,7 @@ export async function startZap(opts: { memoryMb?: number; startTimeoutMs?: numbe
         /* bereits beendet */
       }
     }
+    if (proc.pid) liveZapGroups.delete(proc.pid);
     fs.rmSync(home, { recursive: true, force: true });
   };
   const deadline = Date.now() + (opts.startTimeoutMs ?? 120_000);

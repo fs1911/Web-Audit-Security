@@ -18,6 +18,7 @@ const MAX_CONCURRENT = Number(process.env.RUNNER_MAX_CONCURRENT ?? 1);
 const SHARED = process.env.RUNNER_SHARED_SECRET ?? "";
 
 const running = new Map<string, AbortController>();
+const runningPromises = new Map<string, Promise<unknown>>();
 
 const SpecSchema = z.object({
   jobId: z.string().uuid(),
@@ -109,13 +110,15 @@ const server = http.createServer(async (req, res) => {
       const emit = makeEmitter(spec, ctrl);
       const hb = setInterval(() => void emit({ type: "heartbeat" }), 5000);
       console.log(`[runner] Job ${spec.jobId} (${spec.mode}) gestartet`);
-      void runJob(spec, emit, ctrl.signal)
+      const p = runJob(spec, emit, ctrl.signal)
         .catch(async (e) => emit({ type: "failed", error: `Interner Runner-Fehler: ${(e as Error).message}` }))
         .finally(() => {
           clearInterval(hb);
           running.delete(spec.jobId);
+          runningPromises.delete(spec.jobId);
           console.log(`[runner] Job ${spec.jobId} beendet`);
         });
+      runningPromises.set(spec.jobId, p);
       return send(202, { accepted: true });
     }
     const cancel = req.url?.match(/^\/jobs\/([0-9a-f-]{36})\/cancel$/);
@@ -137,9 +140,15 @@ if (SHARED.length < 32) {
   process.exit(1);
 }
 server.listen(PORT, HOST, () => console.log(`[runner] hört auf ${HOST}:${PORT} (max. ${MAX_CONCURRENT} parallele Jobs)`));
+let shuttingDown = false;
 for (const sig of ["SIGTERM", "SIGINT"] as const) {
-  process.on(sig, () => {
+  process.on(sig, async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    server.close();
     for (const c of running.values()) c.abort();
-    setTimeout(() => process.exit(0), 3000);
+    // Laufende Jobs sauber beenden lassen (ZAP stoppen, Abbruch melden), höchstens 20 s
+    await Promise.race([Promise.allSettled([...runningPromises.values()]), new Promise((r) => setTimeout(r, 20_000))]);
+    process.exit(0);
   });
 }

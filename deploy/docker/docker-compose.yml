@@ -1,0 +1,39 @@
+# Plattformneutrale Variante (z. B. VPS). Runner hat KEINEN Zugriff auf die Datenbank.
+# Egress des Runners zusätzlich per Firewall/Netzwerkrichtlinie auf 80/443 und öffentliche Ziele beschränken (siehe docs/deployment.md).
+services:
+  db:
+    image: postgres:16
+    environment: { POSTGRES_USER: webaudit, POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}, POSTGRES_DB: webaudit }
+    volumes: [dbdata:/var/lib/postgresql/data]
+    networks: [internal]
+  web:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile.web }
+    env_file: ../../.env
+    environment: { DATABASE_URL: "postgres://webaudit:${POSTGRES_PASSWORD}@db:5432/webaudit", APP_INTERNAL_URL: "http://web:3000", RUNNER_URL: "http://runner:8787" }
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [db]
+    networks: [internal, runnerlink]
+  dispatcher:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile.web }
+    command: ["npx", "tsx", "src/worker/main.ts"]
+    env_file: ../../.env
+    environment: { DATABASE_URL: "postgres://webaudit:${POSTGRES_PASSWORD}@db:5432/webaudit", APP_INTERNAL_URL: "http://web:3000", RUNNER_URL: "http://runner:8787" }
+    depends_on: [db]
+    networks: [internal, runnerlink]
+  runner:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile.runner }
+    environment:
+      RUNNER_SHARED_SECRET: ${RUNNER_SHARED_SECRET:?}
+      RUNNER_MAX_CONCURRENT: "1"
+    read_only: false
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 4g
+    pids_limit: 512
+    networks: [runnerlink, egress]
+networks:
+  internal: { internal: true }
+  runnerlink: { internal: true }
+  egress: {}
+volumes:
+  dbdata: {}
