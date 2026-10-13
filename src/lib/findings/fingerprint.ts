@@ -50,7 +50,8 @@ export function dedupeFindings(items: RawFinding[]): DedupedFinding[] {
   for (const f of items) {
     let key: string;
     let groupUrl = f.affectedUrl;
-    if (SITEWIDE_CATEGORIES.has(f.category) && f.affectedUrl && !f.parameter) {
+    // Seitenweite Kategorien je Host gruppieren; ein Parameter (z. B. Header- oder Cookie-Name) bleibt Teil des Fingerprints
+    if (SITEWIDE_CATEGORIES.has(f.category) && f.affectedUrl) {
       try {
         const u = new URL(f.affectedUrl);
         groupUrl = `${u.protocol}//${u.host}/`;

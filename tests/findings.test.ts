@@ -96,6 +96,11 @@ describe("Fingerprint und Duplikaterkennung", () => {
     expect(d[0]!.otherUrls).toHaveLength(2);
     expect(d[0]!.confidence).toBe("confirmed");
   });
+  it("gruppiert Header-Befunde mit Header-Namen als Parameter je Host (z. B. ZAP 10055)", () => {
+    const d = dedupeFindings(["/", "/about", "/contact"].map((p) => raw({ ruleId: "zap:10055", parameter: "Content-Security-Policy", affectedUrl: `https://www.example.ch${p}` })));
+    expect(d).toHaveLength(1);
+    expect(d[0]!.occurrences).toBe(3);
+  });
   it("hält parameterbezogene Befunde getrennt", () => {
     const d = dedupeFindings([raw({ category: "Webanwendung", parameter: "q", ruleId: "zap:40012" }), raw({ category: "Webanwendung", parameter: "name", ruleId: "zap:40012" })]);
     expect(d).toHaveLength(2);

@@ -256,7 +256,8 @@ async function runRepository(spec: JobSpec, emit: Emit, signal: AbortSignal, kno
         if (r.lockfiles === 0) coverage.push({ checkId: "WA-REPO-02", state: "not_applicable", limitation: "Keine unterstützten Lockfiles gefunden" });
       }],
       ["semgrep", "WA-REPO-03", async () => {
-        versions.semgrep = await toolVersion("semgrep", ["--version"]);
+        // Offline aus den Paketmetadaten (semgrep --version kann ohne Netz hängen)
+        versions.semgrep = await toolVersion("python3", ["-c", "import importlib.metadata as m; print(m.version('semgrep'))"]);
         findings.push(...(await runSemgrep(repo.dir, versions.semgrep, ctx)));
       }],
     ];
